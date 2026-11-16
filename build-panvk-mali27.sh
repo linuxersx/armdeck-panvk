@@ -102,7 +102,7 @@ patch(
 )
 
 # 3.2 fork 用内部 dummy resource 替代 null descriptor，但这三处仍保留
-#     Bifrost 断言；gamescope 会调 textureSize，从而 abort。
+#     Bifrost 断言；调用 textureSize 的 Vulkan 应用会 abort。
 p = "src/panfrost/vulkan/panvk_vX_nir_lower_descriptors.c"
 s = open(p).read()
 old = ("   /* TODO/Bifrost: Null descriptors */\n"
