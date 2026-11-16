@@ -1,0 +1,119 @@
+/*
+ * Copyright © 2024 Collabora Ltd.
+ * SPDX-License-Identifier: MIT
+ */
+
+#ifndef PANVK_CMD_DISPATCH_H
+#define PANVK_CMD_DISPATCH_H
+
+#ifndef PAN_ARCH
+#error "PAN_ARCH must be defined"
+#endif
+
+#include "pan_desc.h"
+
+enum panvk_cmd_compute_dirty_state {
+   PANVK_CMD_COMPUTE_DIRTY_CS,
+   PANVK_CMD_COMPUTE_DIRTY_DESC_STATE,
+   PANVK_CMD_COMPUTE_DIRTY_PUSH_UNIFORMS,
+   PANVK_CMD_COMPUTE_DIRTY_STATE_COUNT,
+};
+
+struct panvk_cmd_compute_state {
+   struct panvk_descriptor_state desc_state;
+   const struct panvk_shader *shader;
+   struct panvk_compute_sysvals sysvals;
+   uint64_t push_uniforms;
+   struct {
+      struct panvk_shader_desc_state desc;
+   } cs;
+   BITSET_DECLARE(dirty, PANVK_CMD_COMPUTE_DIRTY_STATE_COUNT);
+};
+
+#define compute_state_dirty(__cmdbuf, __name)                                  \
+   BITSET_TEST((__cmdbuf)->state.compute.dirty,                                \
+               PANVK_CMD_COMPUTE_DIRTY_##__name)
+
+#define compute_state_set_dirty(__cmdbuf, __name)                              \
+   BITSET_SET((__cmdbuf)->state.compute.dirty, PANVK_CMD_COMPUTE_DIRTY_##__name)
+
+#define compute_state_clear_all_dirty(__cmdbuf)                                \
+   BITSET_ZERO((__cmdbuf)->state.compute.dirty)
+
+#define clear_dirty_after_dispatch(__cmdbuf)                                   \
+   do {                                                                        \
+      compute_state_clear_all_dirty(__cmdbuf);                                 \
+   } while (0)
+
+#define set_compute_sysval(__cmdbuf, __dirty, __name, __val)                   \
+   do {                                                                        \
+      struct panvk_compute_sysvals __new_sysval;                               \
+      __new_sysval.__name = (__val);                                           \
+      if (memcmp(&(__cmdbuf)->state.compute.sysvals.__name,                    \
+                 &__new_sysval.__name, sizeof(__new_sysval.__name))) {         \
+         (__cmdbuf)->state.compute.sysvals.__name = __new_sysval.__name;       \
+         BITSET_SET_RANGE(__dirty, sysval_fau_start(compute, __name),          \
+                          sysval_fau_end(compute, __name));                    \
+      }                                                                        \
+   } while (0)
+
+#if PAN_ARCH >= 10
+enum panvk_csf_barrier {
+   PANVK_CSF_BARRIER_SYNC,
+   PANVK_CSF_BARRIER_WAIT,
+};
+
+void panvk_per_arch(cmd_signal_barrier)(
+   struct panvk_cmd_buffer *cmdbuf, enum panvk_csf_barrier barrier);
+#endif
+
+struct panvk_dispatch_info {
+   struct {
+      uint32_t x, y, z;
+   } wg_base;
+
+   struct {
+      struct {
+         uint32_t x, y, z;
+      } wg_count;
+   } direct;
+
+   struct {
+      uint64_t buffer_dev_addr;
+   } indirect;
+
+#if PAN_ARCH >= 10
+   enum panvk_csf_barrier barrier;
+#endif
+};
+
+/* Adds a direct dispatch to an active pipeline statistics query (compute shader invocations,
+ * see panvk_pipeline_stats_state). */
+#define panvk_stats_add_dispatch(__cmdbuf, __cs, __info)                       \
+   do {                                                                        \
+      if ((__cmdbuf)->state.gfx.stats.active &&                                \
+          !(__info)->indirect.buffer_dev_addr) {                               \
+         (__cmdbuf)->state.gfx.stats.counts[10] +=                             \
+            (uint64_t)(__info)->direct.wg_count.x *                            \
+            (__info)->direct.wg_count.y * (__info)->direct.wg_count.z *        \
+            (__cs)->cs.local_size.x * (__cs)->cs.local_size.y *                \
+            (__cs)->cs.local_size.z;                                           \
+      }                                                                        \
+   } while (0)
+
+void panvk_per_arch(cmd_prepare_dispatch_sysvals)(
+   struct panvk_cmd_buffer *cmdbuf, const struct panvk_dispatch_info *info);
+
+uint64_t panvk_per_arch(cmd_dispatch_prepare_tls)(
+   struct panvk_cmd_buffer *cmdbuf, const struct panvk_shader_variant *shader,
+   const struct pan_compute_dim *dim, bool indirect);
+
+#if PAN_ARCH == 9
+void panvk_per_arch(jm_pack_compute_payload)(
+   void *job, const struct panvk_shader_variant *cs, uint32_t wg_x,
+   uint32_t wg_y, uint32_t wg_z, uint64_t res_table, uint64_t fau,
+   uint64_t tsd, uint32_t fau_count);
+#endif
+
+#endif
+

@@ -32,6 +32,19 @@ apiVersion:  1.3.363
 driverInfo:  Mesa 27.0.0-devel (git-58f2c55854)
 ```
 
+## 源码
+
+仓库根目录就是完整的 Mesa 27 + JimVulkan/mali-panvk 源码树（commit
+`58f2c55854`），Linux/Wayland 修复已经直接应用到树内：
+
+- `src/loader` 与 `include/vulkan` 从 Mesa main 恢复；
+- `src/loader/meson.build` 适配 `linux-dmabuf-v1` key；
+- `src/panfrost/vulkan/panvk_wsi.c` 和
+  `src/panfrost/vulkan/panvk_vX_nir_lower_descriptors.c` 已应用下述补丁。
+
+上游 fork 自带的 README 保留为 `README.upstream.md`，Android 构建脚本
+保留为 `build.sh`。Linux/Wayland 构建使用 `build-panvk-mali27.sh`。
+
 ## 为什么需要这个仓库
 
 上游 `mali-panvk` 是 Android-first 的，直接拿来在 Linux/Wayland 上构建会遇到：
@@ -41,7 +54,7 @@ driverInfo:  Mesa 27.0.0-devel (git-58f2c55854)
    而该分支的 WSI 仍用旧名 `linux-dmabuf-unstable-v1`；
 3. Bifrost 的 WSI 和 null descriptor 路径有 Android 假设，需要小修。
 
-本仓库把这些问题固化成一份可重复执行的构建脚本。
+本仓库直接包含打好补丁的完整源码树，并提供一份可重复执行的构建脚本。
 
 ## Linux / Wayland WSI 修复
 
@@ -63,7 +76,8 @@ driverInfo:  Mesa 27.0.0-devel (git-58f2c55854)
 
 ## 构建
 
-构建环境：**aarch64 Arch Linux ARM** 容器（或机器），需要网络。
+构建环境：**aarch64 Arch Linux ARM** 容器（或机器）。源码已在仓库内，
+构建不需要联网。
 
 依赖：
 
@@ -86,27 +100,22 @@ pacman -S --needed base-devel git meson ninja cmake pkgconf glslang \
 ./build-panvk-mali27.sh
 ```
 
-脚本会：
+脚本直接在仓库根目录执行 meson + ninja：
 
 ```text
-下载 JimVulkan/mali-panvk @ 58f2c55854（codeload tar.gz）
-下载 Mesa main（只取 src/loader 和 include/vulkan）
-适配被改名的 Wayland protocol key
-应用三处 Bifrost WSI / null descriptor 修复
-meson setup -Dvulkan-drivers=panfrost -Dplatforms=wayland ...
-ninja
-输出 libvulkan_panfrost.so + panfrost_icd.aarch64.json
+meson setup build-linux \
+  -Dvulkan-drivers=panfrost -Dplatforms=wayland ...
+ninja -C build-linux
+输出 build-linux/src/panfrost/vulkan/libvulkan_panfrost.so
+并复制到 out/
 ```
 
 可用环境变量：
 
 ```text
-PANVK_COMMIT   覆盖固定 commit
-SRC            源码目录，默认 /work/mali-panvk
-BUILD          构建目录，默认 $SRC/build-linux
-OUT            产物目录，默认 /out/armdeck-panvk
-CACHE          下载缓存目录，默认 /work
-MESA_URL       覆盖 Mesa main tarball 地址
+SRC     源码目录，默认仓库根目录
+BUILD   构建目录，默认 $SRC/build-linux
+OUT     产物目录，默认 $SRC/out
 ```
 
 ## 安装
