@@ -1,7 +1,7 @@
 # armdeck-panvk
 
 面向 **MT6785 / Mali-G76（Bifrost）** 的 Linux / Wayland 版 PanVK Vulkan ICD，
-用于在 mainline `panfrost` 内核驱动上跑 Vulkan 应用、gamescope 和 Steam 大屏。
+用于在 mainline `panfrost` 内核驱动上运行 Vulkan 应用。
 
 本仓库不是完整的 Mesa 分支，而是：
 
@@ -54,16 +54,12 @@ driverInfo:  Mesa 27.0.0-devel (git-58f2c55854)
 2. **`panvk_vX_nir_lower_descriptors.c`：去掉 null descriptor 断言**
    该分支在 Bifrost 上会用内部 dummy resource 替代 null descriptor，但
    `textureSize` / `textureLevels` / `textureSamples` 三处仍保留
-   `TODO/Bifrost` 断言。gamescope 调用这些路径时会 abort。
+   `TODO/Bifrost` 断言，调用这些路径的 Vulkan 应用会 abort。
 
 3. **`panvk_wsi.c`：`supports_modifiers = false`**
-   避免 gamescope WSI 传入的显式 DRM modifier 触发
+   避免 WSI 传入的显式 DRM modifier 触发
    `panvk_image_get_explicit_mod()` 断言。客户端 WSI buffer 因此以线性布局
    导出（`DRM_FORMAT_MOD_INVALID`）。
-
-> 说明：vkcube 在 gamescope 下花屏的根因不在 PanVK，而是 gamescope 把
-> `DRM_FORMAT_MOD_INVALID` 的 dma-buf 用 `VK_IMAGE_TILING_OPTIMAL` 导入，
-> 被 PanVK 选成 AFBC。该问题由 gamescope 侧的补丁修复，不在本仓库。
 
 ## 构建
 
@@ -164,16 +160,12 @@ apiVersion   = 1.3.363
 
 ```sh
 vkcube
-# gamescope 直通 DRM
-gamescope --backend drm -W 960 -H 640 --force-orientation right \
-  --force-composition-rotation -- vkcube
 ```
 
 ## 已知限制
 
 - 这是 **Vulkan** 驱动；OpenGL 仍由系统的 `panfrost_dri.so` 提供。
-- Zink + PanVK 目前最高 OpenGL 3.2；Steam UI 的 GL 合成器要求 4.3，
-  因此侧边栏等仍可能走 CPU 合成。
+- Zink + PanVK 目前最高 OpenGL 3.2。
 - PanVK `maxComputeWorkGroupInvocations = 384`，不满足部分 GL 4.3 要求。
 - 客户端 WSI 走线性布局（`supports_modifiers = false`），不使用 AFBC modifier。
 - 仅针对 MT6785 / Mali-G76 验证；其他 Bifrost 型号可尝试，但不保证。
